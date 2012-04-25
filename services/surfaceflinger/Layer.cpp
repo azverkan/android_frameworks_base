@@ -93,7 +93,11 @@ void Layer::onFirstRef()
     mSurfaceTexture = new SurfaceTextureLayer(mTextureName, this);
     mSurfaceTexture->setFrameAvailableListener(new FrameQueuedListener(this));
     mSurfaceTexture->setSynchronousMode(true);
+#ifdef QCOM_HARDWARE
+    mSurfaceTexture->setBufferCountServer(BUFFER_COUNT_SERVER);
+#else
     mSurfaceTexture->setBufferCountServer(2);
+#endif
 }
 
 Layer::~Layer()
@@ -178,10 +182,14 @@ status_t Layer::setBuffers( uint32_t w, uint32_t h,
     mSurfaceTexture->setDefaultBufferSize(w, h);
     mSurfaceTexture->setDefaultBufferFormat(format);
 
-    // we use the red index
-    int displayRedSize = displayInfo.getSize(PixelFormatInfo::INDEX_RED);
-    int layerRedsize = info.getSize(PixelFormatInfo::INDEX_RED);
-    mNeedsDithering = layerRedsize > displayRedSize;
+    if (mFlinger->getUseDithering()) {
+        // we use the red index
+        int displayRedSize = displayInfo.getSize(PixelFormatInfo::INDEX_RED);
+        int layerRedsize = info.getSize(PixelFormatInfo::INDEX_RED);
+        mNeedsDithering = layerRedsize > displayRedSize;
+    } else {
+        mNeedsDithering = false;
+    }
 
     return NO_ERROR;
 }
@@ -264,6 +272,7 @@ void Layer::setPerFrameData(hwc_layer_t* hwcl) {
         hwcl->handle = buffer->handle;
     }
 #ifdef QCOM_HARDWARE
+    updateLayerQcomFlags(LAYER_ASYNCHRONOUS_STATUS, !mSurfaceTexture->isSynchronousMode(), mLayerQcomFlags);
     hwcl->flags = getPerFrameFlags(hwcl->flags, mLayerQcomFlags);
 #endif
 }
@@ -293,7 +302,11 @@ void Layer::onDraw(const Region& clip) const
         // if not everything below us is covered, we plug the holes!
         Region holes(clip.subtract(under));
         if (!holes.isEmpty()) {
+#ifdef SAMSUNG_CODEC_SUPPORT
+            clearWithOpenGL(holes, 0, 0, 0, 0);
+#else
             clearWithOpenGL(holes, 0, 0, 0, 1);
+#endif
         }
         return;
     }
@@ -303,32 +316,63 @@ void Layer::onDraw(const Region& clip) const
 	    clearWithOpenGL(clip, 0, 0, 0, 1);
         return;
 	}
+
+    GLuint currentTextureTarget = mSurfaceTexture->getCurrentTextureTarget();
 #endif
 
     if (!isProtected()) {
+#ifdef QCOM_HARDWARE
+        glBindTexture(currentTextureTarget, mTextureName);
+#else
         glBindTexture(GL_TEXTURE_EXTERNAL_OES, mTextureName);
+#endif
         GLenum filter = GL_NEAREST;
         if (getFiltering() || needsFiltering() || isFixedSize() || isCropped()) {
             // TODO: we could be more subtle with isFixedSize()
             filter = GL_LINEAR;
         }
+#ifdef QCOM_HARDWARE
+        glTexParameterx(currentTextureTarget, GL_TEXTURE_MAG_FILTER, filter);
+        glTexParameterx(currentTextureTarget, GL_TEXTURE_MIN_FILTER, filter);
+#else
         glTexParameterx(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, filter);
         glTexParameterx(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, filter);
+#endif
         glMatrixMode(GL_TEXTURE);
         glLoadMatrixf(mTextureMatrix);
         glMatrixMode(GL_MODELVIEW);
         glDisable(GL_TEXTURE_2D);
+#ifdef QCOM_HARDWARE
+        glEnable(currentTextureTarget);
+#else
         glEnable(GL_TEXTURE_EXTERNAL_OES);
+#endif
     } else {
+#ifdef QCOM_HARDWARE
+        glBindTexture(currentTextureTarget, mFlinger->getProtectedTexName());
+#else
         glBindTexture(GL_TEXTURE_2D, mFlinger->getProtectedTexName());
+#endif
         glMatrixMode(GL_TEXTURE);
         glLoadIdentity();
         glMatrixMode(GL_MODELVIEW);
+#ifdef QCOM_HARDWARE
+        glEnable(currentTextureTarget);
+#else
         glDisable(GL_TEXTURE_EXTERNAL_OES);
         glEnable(GL_TEXTURE_2D);
+#endif
     }
 
+#ifdef QCOM_HARDWARE
+    int composeS3DFormat = mQCLayer->needsS3DCompose();
+    if (composeS3DFormat)
+        drawS3DUIWithOpenGL(clip);
+    else
+        drawWithOpenGL(clip);
+#else
     drawWithOpenGL(clip);
+#endif
 
     glDisable(GL_TEXTURE_EXTERNAL_OES);
     glDisable(GL_TEXTURE_2D);
@@ -440,7 +484,17 @@ void Layer::lockPageFlip(bool& recomputeVisibleRegions)
             mFlinger->signalEvent();
         }
 
+#ifdef QCOM_HARDWARE
+        // While calling updateTexImage() from SurfaceFlinger, let it know
+        // by passing an extra parameter
+        // This will be true always.
+
+        bool isComposition = true;
+
+        if (mSurfaceTexture->updateTexImage(isComposition) < NO_ERROR) {
+#else
         if (mSurfaceTexture->updateTexImage() < NO_ERROR) {
+#endif
             // something happened!
             recomputeVisibleRegions = true;
             return;

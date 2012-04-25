@@ -28,6 +28,7 @@ import android.app.Notification;
 import android.app.PendingIntent;
 import android.app.StatusBarManager;
 import android.content.BroadcastReceiver;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -48,6 +49,8 @@ import android.os.IBinder;
 import android.os.Message;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.os.storage.StorageManager;
+import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Slog;
 import android.view.accessibility.AccessibilityEvent;
@@ -80,6 +83,7 @@ import com.android.systemui.statusbar.SignalClusterView;
 import com.android.systemui.statusbar.StatusBar;
 import com.android.systemui.statusbar.StatusBarIconView;
 import com.android.systemui.statusbar.policy.BatteryController;
+import com.android.systemui.statusbar.policy.DockBatteryController;
 import com.android.systemui.statusbar.policy.BluetoothController;
 import com.android.systemui.statusbar.policy.CompatModeButton;
 import com.android.systemui.statusbar.policy.LocationController;
@@ -123,6 +127,8 @@ public class TabletStatusBar extends StatusBar implements
     int mIconHPadding = -1;
     private int mMaxNotificationIcons = 5;
 
+    private boolean mShowClock;
+
     H mHandler = new H();
 
     IWindowManager mWindowManager;
@@ -163,9 +169,12 @@ public class TabletStatusBar extends StatusBar implements
 
     HeightReceiver mHeightReceiver;
     BatteryController mBatteryController;
+    DockBatteryController mDockBatteryController;
     BluetoothController mBluetoothController;
     LocationController mLocationController;
     NetworkController mNetworkController;
+
+    private boolean mHasDockBattery;
 
     ViewGroup mBarContents;
 
@@ -195,6 +204,8 @@ public class TabletStatusBar extends StatusBar implements
 
     public Context getContext() { return mContext; }
 
+    private StorageManager mStorageManager;
+
     protected void addPanelWindows() {
         final Context context = mContext;
         final Resources res = mContext.getResources();
@@ -212,17 +223,20 @@ public class TabletStatusBar extends StatusBar implements
         mBatteryController.addLabelView(
                 (TextView)mNotificationPanel.findViewById(R.id.battery_text));
 
+        if (mHasDockBattery) {
+            mDockBatteryController.addIconView((ImageView)mNotificationPanel.findViewById(R.id.dock_battery));
+        }
         // Bt
         mBluetoothController.addIconView(
                 (ImageView)mNotificationPanel.findViewById(R.id.bluetooth));
 
+        // storage
+        mStorageManager = (StorageManager) context.getSystemService(Context.STORAGE_SERVICE);
+        mStorageManager.registerListener(
+                new com.android.systemui.usb.StorageNotification(context));
+
         // network icons: either a combo icon that switches between mobile and data, or distinct
         // mobile and data icons
-        final ImageView comboRSSI = 
-                (ImageView)mNotificationPanel.findViewById(R.id.network_signal);
-        if (comboRSSI != null) {
-            mNetworkController.addCombinedSignalIconView(comboRSSI);
-        }
         final ImageView mobileRSSI = 
                 (ImageView)mNotificationPanel.findViewById(R.id.mobile_signal);
         if (mobileRSSI != null) {
@@ -233,14 +247,14 @@ public class TabletStatusBar extends StatusBar implements
         if (wifiRSSI != null) {
             mNetworkController.addWifiIconView(wifiRSSI);
         }
+        mNetworkController.addWifiLabelView(
+                (TextView)mNotificationPanel.findViewById(R.id.wifi_text));
 
         mNetworkController.addDataTypeIconView(
-                (ImageView)mNotificationPanel.findViewById(R.id.network_type));
-        mNetworkController.addDataDirectionOverlayIconView(
-                (ImageView)mNotificationPanel.findViewById(R.id.network_direction));
-        mNetworkController.addLabelView(
-                (TextView)mNotificationPanel.findViewById(R.id.network_text));
-        mNetworkController.addLabelView(
+                (ImageView)mNotificationPanel.findViewById(R.id.mobile_type));
+        mNetworkController.addMobileLabelView(
+                (TextView)mNotificationPanel.findViewById(R.id.mobile_text));
+        mNetworkController.addCombinedLabelView(
                 (TextView)mBarContents.findViewById(R.id.network_text));
 
         mStatusBarView.setIgnoreChildren(0, mNotificationTrigger, mNotificationPanel);
@@ -491,8 +505,19 @@ public class TabletStatusBar extends StatusBar implements
         // The icons
         mLocationController = new LocationController(mContext); // will post a notification
 
+        mHasDockBattery = mContext.getResources().getBoolean(
+                com.android.internal.R.bool.config_hasDockBattery);
+
         mBatteryController = new BatteryController(mContext);
         mBatteryController.addIconView((ImageView)sb.findViewById(R.id.battery));
+        mBatteryController.addLabelView(
+                (TextView)sb.findViewById(R.id.battery_text));
+
+        if (mHasDockBattery) {
+            mDockBatteryController = new DockBatteryController(mContext);
+            mDockBatteryController.addIconView((ImageView)sb.findViewById(R.id.dock_battery));
+        }
+
         mBluetoothController = new BluetoothController(mContext);
         mBluetoothController.addIconView((ImageView)sb.findViewById(R.id.bluetooth));
 
@@ -934,10 +959,14 @@ public class TabletStatusBar extends StatusBar implements
     }
 
     public void showClock(boolean show) {
+        ContentResolver resolver = mContext.getContentResolver();
+
         View clock = mBarContents.findViewById(R.id.clock);
         View network_text = mBarContents.findViewById(R.id.network_text);
+        mShowClock = (Settings.System.getInt(resolver,
+                Settings.System.STATUS_BAR_CLOCK, 1) == 1);
         if (clock != null) {
-            clock.setVisibility(show ? View.VISIBLE : View.GONE);
+            clock.setVisibility(show ? (mShowClock ? View.VISIBLE : View.GONE) : View.GONE);
         }
         if (network_text != null) {
             network_text.setVisibility((!show) ? View.VISIBLE : View.GONE);

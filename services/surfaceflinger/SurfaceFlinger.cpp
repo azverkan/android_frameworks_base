@@ -105,14 +105,15 @@ SurfaceFlinger::SurfaceFlinger()
         mDebugInTransaction(0),
         mLastTransactionTime(0),
         mBootFinished(false),
-        mConsoleSignals(0),
+#ifdef QCOM_HDMI_OUT
+        mHDMIOutput(EXT_DISPLAY_OFF),
+#endif
 #ifdef QCOM_HARDWARE
         mCanSkipComposition(false),
 #endif
-#ifdef QCOM_HDMI_OUT
-        mHDMIOutput(false),
-#endif
-        mSecureFrameBuffer(0)
+        mConsoleSignals(0),
+        mSecureFrameBuffer(0),
+        mUseDithering(false)
 {
     init();
 }
@@ -132,6 +133,10 @@ void SurfaceFlinger::init()
 
     property_get("debug.sf.ddms", value, "0");
     mDebugDDMS = atoi(value);
+
+    property_get("persist.sys.use_dithering", value, "0");
+    mUseDithering = atoi(value) == 1;
+
     if (mDebugDDMS) {
         DdmConnection::start(getServiceName());
     }
@@ -139,6 +144,7 @@ void SurfaceFlinger::init()
     LOGI_IF(mDebugRegion,       "showupdates enabled");
     LOGI_IF(mDebugBackground,   "showbackground enabled");
     LOGI_IF(mDebugDDMS,         "DDMS debugging enabled");
+    LOGI_IF(mUseDithering,      "use dithering");
 }
 
 SurfaceFlinger::~SurfaceFlinger()
@@ -1023,6 +1029,9 @@ void SurfaceFlinger::setupHardwareComposer(Region& dirtyInOut)
                     dirtyInOut.orSelf(layer->visibleRegionScreen);
                 }
                 layer->setOverlay(isOverlay);
+#ifdef QCOM_HARDWARE
+                layer->mQCLayer->setS3DComposeFormat(cur[i].hints);
+#endif
             }
             // don't erase stuff outside the dirty region
             transparent.andSelf(dirtyInOut);
@@ -1612,6 +1621,11 @@ uint32_t SurfaceFlinger::setClientStateLocked(
 
 void SurfaceFlinger::screenReleased(int dpy)
 {
+#ifdef SURFACEFLINGER_FORCE_SCREEN_RELEASE
+    const DisplayHardware& hw = graphicPlane(0).displayHardware();
+    hw.releaseScreen();
+#endif
+
     // this may be called by a signal handler, we can't do too much in here
     android_atomic_or(eConsoleReleased, &mConsoleSignals);
     signalEvent();
@@ -2131,6 +2145,11 @@ status_t SurfaceFlinger::electronBeamOffAnimationImplLocked()
     glDeleteTextures(1, &tname);
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_BLEND);
+
+#ifdef SURFACEFLINGER_FORCE_SCREEN_RELEASE
+    hw.releaseScreen();
+#endif
+
     return NO_ERROR;
 }
 
@@ -2446,7 +2465,12 @@ status_t SurfaceFlinger::captureScreenImplLocked(DisplayID dpy,
         glClear(GL_COLOR_BUFFER_BIT);
 
         const LayerVector& layers(mDrawingState.layersSortedByZ);
+#ifdef QCOM_HARDWARE
+        //if we have secure windows, do not draw any layers.
+        const size_t count = mSecureFrameBuffer ? 0: layers.size();
+#else
         const size_t count = layers.size();
+#endif
         for (size_t i=0 ; i<count ; ++i) {
             const sp<LayerBase>& layer(layers[i]);
             const uint32_t flags = layer->drawingState().flags;
@@ -2550,9 +2574,11 @@ status_t SurfaceFlinger::captureScreen(DisplayID dpy,
         virtual bool handler() {
             Mutex::Autolock _l(flinger->mStateLock);
 
+#ifndef QCOM_HARDWARE
             // if we have secure windows, never allow the screen capture
             if (flinger->mSecureFrameBuffer)
                 return true;
+#endif
 
             result = flinger->captureScreenImplLocked(dpy,
                     heap, w, h, f, sw, sh, minLayerZ, maxLayerZ);
@@ -2709,6 +2735,7 @@ status_t Client::destroySurface(SurfaceID sid) {
 #ifdef QCOM_HARDWARE
 GraphicBufferAlloc::GraphicBufferAlloc() {
     mFreedIndex = -1;
+    mSize = 0;
 }
 #else
 GraphicBufferAlloc::GraphicBufferAlloc() {}
@@ -2731,6 +2758,11 @@ sp<GraphicBuffer> GraphicBufferAlloc::createGraphicBuffer(uint32_t w, uint32_t h
         return 0;
     }
 #ifdef QCOM_HARDWARE
+    err = checkBuffer((native_handle_t *)graphicBuffer->handle, mSize, usage);
+    if (err) {
+        LOGE("%s: checkBuffer failed",__FUNCTION__);
+        return 0;
+    }
     Mutex::Autolock _l(mLock);
     if (-1 != mFreedIndex) {
         mBuffers.insertAt(graphicBuffer, mFreedIndex);
@@ -2745,7 +2777,7 @@ sp<GraphicBuffer> GraphicBufferAlloc::createGraphicBuffer(uint32_t w, uint32_t h
 #ifdef QCOM_HARDWARE
 void GraphicBufferAlloc::freeAllGraphicBuffersExcept(int bufIdx) {
     Mutex::Autolock _l(mLock);
-    if (0 <= bufIdx && bufIdx < mBuffers.size()) {
+    if (bufIdx >= 0 && bufIdx < (int)mBuffers.size()) {
         sp<GraphicBuffer> b(mBuffers[bufIdx]);
         mBuffers.clear();
         mBuffers.add(b);
@@ -2757,12 +2789,16 @@ void GraphicBufferAlloc::freeAllGraphicBuffersExcept(int bufIdx) {
 
 void GraphicBufferAlloc::freeGraphicBufferAtIndex(int bufIdx) {
      Mutex::Autolock _l(mLock);
-     if (0 <= bufIdx && bufIdx < mBuffers.size()) {
+     if (bufIdx >= 0 && bufIdx < (int)mBuffers.size()) {
         mBuffers.removeItemsAt(bufIdx);
         mFreedIndex = bufIdx;
      } else {
         mFreedIndex = -1;
      }
+}
+
+void GraphicBufferAlloc::setGraphicBufferSize(int size) {
+    mSize = size;
 }
 #endif
 // ---------------------------------------------------------------------------

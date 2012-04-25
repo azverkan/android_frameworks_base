@@ -113,7 +113,10 @@ public class Notification implements Parcelable
      * {@link android.content.Intent#FLAG_ACTIVITY_NEW_TASK} flag, which requires
      * that you take care of task management as described in the
      * <a href="{@docRoot}guide/topics/fundamentals/tasks-and-back-stack.html">Tasks and Back
-     * Stack</a> document.
+     * Stack</a> document.  In particular, make sure to read the notification section
+     * <a href="{@docRoot}guide/topics/ui/notifiers/notifications.html#HandlingNotifications">Handling
+     * Notifications</a> for the correct ways to launch an application from a
+     * notification.
      */
     public PendingIntent contentIntent;
 
@@ -304,6 +307,15 @@ public class Notification implements Parcelable
      * in conjunction with {@link #fullScreenIntent}.
      */
     public static final int FLAG_HIGH_PRIORITY = 0x00000080;
+
+    /**
+     * Bit to be bitwise-ored into the {@link #flags} field that should be
+     * set if this notification should force the led to pulse even if the
+     * screen has been shut off while the notification was active.
+     *
+     * @hide
+     */
+    public static final int FLAG_FORCE_LED_SCREEN_OFF = 0x00000100;
 
     public int flags;
 
@@ -765,7 +777,9 @@ public class Notification implements Parcelable
          * Supply a {@link PendingIntent} to send when the notification is clicked.
          * If you do not supply an intent, you can now add PendingIntents to individual
          * views to be launched when clicked by calling {@link RemoteViews#setOnClickPendingIntent
-         * RemoteViews.setOnClickPendingIntent(int,PendingIntent)}.
+         * RemoteViews.setOnClickPendingIntent(int,PendingIntent)}.  Be sure to
+         * read {@link Notification#contentIntent Notification.contentIntent} for
+         * how to correctly use this.
          */
         public Builder setContentIntent(PendingIntent intent) {
             mContentIntent = intent;

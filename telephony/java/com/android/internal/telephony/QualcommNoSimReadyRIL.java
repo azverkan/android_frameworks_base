@@ -49,8 +49,7 @@ public class QualcommNoSimReadyRIL extends RIL implements CommandsInterface {
     private final int RIL_INT_RADIO_OFF = 0;
     private final int RIL_INT_RADIO_UNAVALIABLE = 1;
     private final int RIL_INT_RADIO_ON = 2;
-
-    protected boolean mInitialRadioStateChange = true;
+    private final int RIL_INT_RADIO_ON_NG = 10;
 
     public QualcommNoSimReadyRIL(Context context, int networkMode, int cdmaSubscription) {
         super(context, networkMode, cdmaSubscription);
@@ -615,11 +614,16 @@ public class QualcommNoSimReadyRIL extends RIL implements CommandsInterface {
         switch (stateCode) {
             case RIL_INT_RADIO_OFF:
                 radioState = CommandsInterface.RadioState.RADIO_OFF;
+                if (mIccHandler != null) {
+                    mIccThread = null;
+                    mIccHandler = null;
+                }
                 break;
             case RIL_INT_RADIO_UNAVALIABLE:
                 radioState = CommandsInterface.RadioState.RADIO_UNAVAILABLE;
                 break;
             case RIL_INT_RADIO_ON:
+            case RIL_INT_RADIO_ON_NG:
                 if (mIccHandler == null) {
                     handlerThread = new HandlerThread("IccHandler");
                     mIccThread = handlerThread;
@@ -641,19 +645,7 @@ public class QualcommNoSimReadyRIL extends RIL implements CommandsInterface {
                 throw new RuntimeException("Unrecognized RIL_RadioState: " + stateCode);
         }
 
-        if (mInitialRadioStateChange) {
-            if (radioState.isOn()) {
-                Log.d(LOG_TAG, "Radio ON @ init; reset to OFF");
-                setRadioPower(false, null);
-            }
-            else {
-                setRadioState (radioState);
-            }
-            mInitialRadioStateChange = false;
-        }
-        else {
-            setRadioState (radioState);
-        }
+        setRadioState (radioState);
     }
     class IccHandler extends Handler implements Runnable {
         private static final int EVENT_RADIO_ON = 1;

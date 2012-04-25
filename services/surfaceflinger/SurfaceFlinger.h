@@ -100,10 +100,12 @@ public:
 #ifdef QCOM_HARDWARE
     virtual void freeAllGraphicBuffersExcept(int bufIdx);
     virtual void freeGraphicBufferAtIndex(int bufIdx);
+    virtual void setGraphicBufferSize(int size);
 private:
     Vector<sp<GraphicBuffer> > mBuffers;
     Mutex mLock;
     int mFreedIndex;
+    int mSize;
 #endif
 };
 
@@ -218,6 +220,8 @@ public:
     sp<Layer> getLayer(const sp<ISurface>& sur) const;
 
     GLuint getProtectedTexName() const { return mProtectedTexName; }
+
+    inline int  getUseDithering() const { return mUseDithering; }
 
 
     class MessageDestroyGLTexture : public MessageBase {
@@ -437,6 +441,8 @@ private:
 
    // only written in the main thread, only read in other threads
    volatile     int32_t                     mSecureFrameBuffer;
+
+                bool                        mUseDithering;
 };
 
 // ---------------------------------------------------------------------------

@@ -46,6 +46,7 @@ import android.os.storage.StorageVolume;
 import android.os.SystemProperties;
 import android.os.UEventObserver;
 import android.provider.Settings;
+import android.util.Pair;
 import android.util.Slog;
 
 import java.io.File;
@@ -54,7 +55,10 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * UsbDeviceManager manages USB state in device mode.
@@ -88,6 +92,8 @@ public class UsbDeviceManager {
     // which need debouncing.
     private static final int UPDATE_DELAY = 1000;
 
+    private static final String BOOT_MODE_PROPERTY = "ro.bootmode";
+
     private UsbHandler mHandler;
     private boolean mBootCompleted;
 
@@ -98,6 +104,7 @@ public class UsbDeviceManager {
     private final boolean mHasUsbAccessory;
     private boolean mUseUsbNotification;
     private boolean mAdbEnabled;
+    private Map<String, List<Pair<String, String>>> mOemModeMap;
 
     private class AdbSettingsObserver extends ContentObserver {
         public AdbSettingsObserver() {
@@ -146,6 +153,8 @@ public class UsbDeviceManager {
         mHasUsbAccessory = pm.hasSystemFeature(PackageManager.FEATURE_USB_ACCESSORY);
         initRndisAddress();
 
+        readOemUsbOverrideConfig();
+
         // create a thread for our Handler
         HandlerThread thread = new HandlerThread("UsbDeviceManager",
                 Process.THREAD_PRIORITY_BACKGROUND);
@@ -170,9 +179,15 @@ public class UsbDeviceManager {
         StorageManager storageManager = (StorageManager)
                 mContext.getSystemService(Context.STORAGE_SERVICE);
         StorageVolume[] volumes = storageManager.getVolumeList();
+
         if (volumes.length > 0) {
-            massStorageSupported = volumes[0].allowMassStorage();
+            if (Settings.Secure.getInt(mContentResolver, Settings.Secure.USB_MASS_STORAGE_ENABLED, 0) == 1 ) {
+                massStorageSupported = volumes[0].allowMassStorage();
+            } else {
+                massStorageSupported = false;
+            }
         }
+
         mUseUsbNotification = !massStorageSupported;
 
         // make sure the ADB_ENABLED setting value matches the current state
@@ -267,6 +282,10 @@ public class UsbDeviceManager {
                 // persist.sys.usb.config should never be unset.  But if it is, set it to "adb"
                 // so we have a chance of debugging what happened.
                 mDefaultFunctions = SystemProperties.get("persist.sys.usb.config", "adb");
+
+                // Check if USB mode needs to be overridden depending on OEM specific bootmode.
+                mDefaultFunctions = processOemUsbOverride(mDefaultFunctions);
+
                 // sanity check the sys.usb.config system property
                 // this may be necessary if we crashed while switching USB configurations
                 String config = SystemProperties.get("sys.usb.config", "none");
@@ -389,7 +408,11 @@ public class UsbDeviceManager {
         }
 
         private void setEnabledFunctions(String functions, boolean makeDefault) {
-            if (functions != null && makeDefault) {
+
+            // Do not update persystent.sys.usb.config if the device is booted up
+            // with OEM specific mode.
+            if (functions != null && makeDefault && !needsOemUsbOverride()) {
+
                 if (mAdbEnabled) {
                     functions = addFunction(functions, UsbManager.USB_FUNCTION_ADB);
                 } else {
@@ -418,6 +441,10 @@ public class UsbDeviceManager {
                 if (functions == null) {
                     functions = mDefaultFunctions;
                 }
+
+                // Override with bootmode specific usb mode if needed
+                functions = processOemUsbOverride(functions);
+
                 if (mAdbEnabled) {
                     functions = addFunction(functions, UsbManager.USB_FUNCTION_ADB);
                 } else {
@@ -544,10 +571,10 @@ public class UsbDeviceManager {
                     id = com.android.internal.R.string.usb_mtp_notification_title;
                 } else if (containsFunction(mCurrentFunctions, UsbManager.USB_FUNCTION_PTP)) {
                     id = com.android.internal.R.string.usb_ptp_notification_title;
-                } else if (containsFunction(mCurrentFunctions,
-                        UsbManager.USB_FUNCTION_MASS_STORAGE)) {
-                    id = com.android.internal.R.string.usb_cd_installer_notification_title;
-                } else if (containsFunction(mCurrentFunctions, UsbManager.USB_FUNCTION_ACCESSORY)) {
+                } /* else if (containsFunction(mCurrentFunctions,
+                     UsbManager.USB_FUNCTION_MASS_STORAGE)) { // Disable this as it causes double USB settings menues when in UMS mode.
+                     id = com.android.internal.R.string.usb_cd_installer_notification_title; 
+                     } */ else if (containsFunction(mCurrentFunctions, UsbManager.USB_FUNCTION_ACCESSORY)) {
                     id = com.android.internal.R.string.usb_accessory_notification_title;
                 } else {
                     // There is a different notification for USB tethering so we don't need one here
@@ -677,6 +704,53 @@ public class UsbDeviceManager {
         } catch (IOException e) {
            Slog.e(TAG, "failed to write to " + MASS_STORAGE_FILE_PATH);
         }
+    }
+
+    private void readOemUsbOverrideConfig() {
+        String[] configList = mContext.getResources().getStringArray(
+            com.android.internal.R.array.config_oemUsbModeOverride);
+
+        if (configList != null) {
+            for (String config: configList) {
+                String[] items = config.split(":");
+                if (items.length == 3) {
+                    if (mOemModeMap == null) {
+                        mOemModeMap = new HashMap<String, List<Pair<String, String>>>();
+                    }
+                    List overrideList = mOemModeMap.get(items[0]);
+                    if (overrideList == null) {
+                        overrideList = new LinkedList<Pair<String, String>>();
+                        mOemModeMap.put(items[0], overrideList);
+                    }
+                    overrideList.add(new Pair<String, String>(items[1], items[2]));
+                }
+            }
+        }
+    }
+
+    private boolean needsOemUsbOverride() {
+        if (mOemModeMap == null) return false;
+
+        String bootMode = SystemProperties.get(BOOT_MODE_PROPERTY, "unknown");
+        return (mOemModeMap.get(bootMode) != null) ? true : false;
+    }
+
+    private String processOemUsbOverride(String usbFunctions) {
+        if ((usbFunctions == null) || (mOemModeMap == null)) return usbFunctions;
+
+        String bootMode = SystemProperties.get(BOOT_MODE_PROPERTY, "unknown");
+
+        List<Pair<String, String>> overrides = mOemModeMap.get(bootMode);
+        if (overrides != null) {
+            for (Pair<String, String> pair: overrides) {
+                if (pair.first.equals(usbFunctions)) {
+                    Slog.d(TAG, "OEM USB override: " + pair.first + " ==> " + pair.second);
+                    return pair.second;
+                }
+            }
+        }
+        // return passed in functions as is.
+        return usbFunctions;
     }
 
     public void dump(FileDescriptor fd, PrintWriter pw) {

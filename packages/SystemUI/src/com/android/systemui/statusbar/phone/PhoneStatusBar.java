@@ -25,6 +25,7 @@ import android.app.Notification;
 import android.app.PendingIntent;
 import android.app.StatusBarManager;
 import android.content.BroadcastReceiver;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -32,11 +33,13 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Resources;
 import android.content.res.Configuration;
+import android.database.ContentObserver;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.IPowerManager;
 import android.os.RemoteException;
 import android.os.Handler;
 import android.os.Message;
@@ -120,6 +123,10 @@ public class PhoneStatusBar extends StatusBar {
 
     private static final boolean CLOSE_PANEL_WHEN_EMPTIED = true;
 
+    private boolean mShowClock;
+    private boolean mBrightnessControl;
+    private boolean mAutoBrightness;
+
     // fling gesture tuning parameters, scaled to display density
     private float mSelfExpandVelocityPx; // classic value: 2000px/s
     private float mSelfCollapseVelocityPx; // classic value: 2000px/s (will be negated to collapse "up")
@@ -131,6 +138,8 @@ public class PhoneStatusBar extends StatusBar {
 
     private float mExpandAccelPx; // classic value: 2000px/s/s
     private float mCollapseAccelPx; // classic value: 2000px/s/s (will be negated to collapse "up")
+    private float mScreenWidth;
+    private int mMinBrightness;
 
     PhoneStatusBarPolicy mIconPolicy;
 
@@ -223,6 +232,7 @@ public class PhoneStatusBar extends StatusBar {
     boolean mAnimatingReveal = false;
     int mViewDelta;
     int[] mAbsPos = new int[2];
+    int mLinger = 0;
     Runnable mPostCollapseCleanup = null;
 
 
@@ -233,6 +243,35 @@ public class PhoneStatusBar extends StatusBar {
     int mSystemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE;
 
     DisplayMetrics mDisplayMetrics = new DisplayMetrics();
+
+    class SettingsObserver extends ContentObserver {
+        SettingsObserver(Handler handler) {
+            super(handler);
+        }
+
+        void observe() {
+            ContentResolver resolver = mContext.getContentResolver();
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.STATUS_BAR_BRIGHTNESS_CONTROL), false, this);
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.SCREEN_BRIGHTNESS_MODE), false, this);
+            update();
+        }
+
+        @Override
+        public void onChange(boolean selfChange) {
+            update();
+        }
+
+        public void update() {
+            ContentResolver resolver = mContext.getContentResolver();
+            mBrightnessControl = Settings.System.getInt(resolver,
+                    Settings.System.STATUS_BAR_BRIGHTNESS_CONTROL, 0) != 0;
+            mAutoBrightness = Settings.System.getInt(resolver,
+                    Settings.System.SCREEN_BRIGHTNESS_MODE, 0) ==
+                    Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC;
+        }
+    }
 
     private class ExpandedDialog extends Dialog {
         ExpandedDialog(Context context) {
@@ -267,6 +306,9 @@ public class PhoneStatusBar extends StatusBar {
 
         //addIntruderView();
 
+        SettingsObserver observer = new SettingsObserver(mHandler);
+        observer.observe();
+
         // Lastly, call to the icon policy to install/update all the icons.
         mIconPolicy = new PhoneStatusBarPolicy(mContext);
     }
@@ -283,7 +325,9 @@ public class PhoneStatusBar extends StatusBar {
         loadDimens();
 
         mIconSize = res.getDimensionPixelSize(com.android.internal.R.dimen.status_bar_icon_size);
-
+        mScreenWidth = (float) context.getResources().getDisplayMetrics().widthPixels;
+        mMinBrightness = context.getResources().getInteger(
+                com.android.internal.R.integer.config_screenBrightnessDim);
         ExpandedView expanded = (ExpandedView)View.inflate(context,
                 R.layout.status_bar_expanded, null);
         if (DEBUG) {
@@ -374,6 +418,7 @@ public class PhoneStatusBar extends StatusBar {
         mLocationController = new LocationController(mContext); // will post a notification
         mBatteryController = new BatteryController(mContext);
         mBatteryController.addIconView((ImageView)sb.findViewById(R.id.battery));
+        mBatteryController.addLabelView((TextView)sb.findViewById(R.id.battery_text));
         mNetworkController = new NetworkController(mContext);
         final SignalClusterView signalCluster =
                 (SignalClusterView)sb.findViewById(R.id.signal_cluster);
@@ -392,6 +437,7 @@ public class PhoneStatusBar extends StatusBar {
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_CONFIGURATION_CHANGED);
         filter.addAction(Intent.ACTION_CLOSE_SYSTEM_DIALOGS);
+        filter.addAction(Intent.ACTION_SCREEN_ON);
         filter.addAction(Intent.ACTION_SCREEN_OFF);
         context.registerReceiver(mBroadcastReceiver, filter);
 
@@ -1059,9 +1105,13 @@ public class PhoneStatusBar extends StatusBar {
     }
 
     public void showClock(boolean show) {
+        ContentResolver resolver = mContext.getContentResolver();
+
         View clock = mStatusBarView.findViewById(R.id.clock);
+        mShowClock = (Settings.System.getInt(resolver,
+                Settings.System.STATUS_BAR_CLOCK, 1) == 1);
         if (clock != null) {
-            clock.setVisibility(show ? View.VISIBLE : View.GONE);
+            clock.setVisibility(show ? (mShowClock ? View.VISIBLE : View.GONE) : View.GONE);
         }
     }
 
@@ -1492,6 +1542,7 @@ public class PhoneStatusBar extends StatusBar {
         final int hitSize = statusBarSize*2;
         final int y = (int)event.getRawY();
         if (action == MotionEvent.ACTION_DOWN) {
+            mLinger = 0;
             if (!mExpanded) {
                 mViewDelta = statusBarSize - y;
             } else {
@@ -1516,8 +1567,34 @@ public class PhoneStatusBar extends StatusBar {
             final int minY = statusBarSize + mCloseView.getHeight();
             if (action == MotionEvent.ACTION_MOVE) {
                 if (mAnimatingReveal && y < minY) {
-                    // nothing
-                } else  {
+                    if (mBrightnessControl && !mAutoBrightness) {
+                        mVelocityTracker.computeCurrentVelocity(1000);
+                        float yVel = mVelocityTracker.getYVelocity();
+                        yVel = Math.abs(yVel);
+                        if (yVel < 50.0f) {
+                            if (mLinger > 20) {
+                                float x = (float) event.getRawX();
+                                int newBrightness = (int) Math.round(((x / mScreenWidth) * android.os.Power.BRIGHTNESS_ON));
+                                newBrightness = Math.min(newBrightness, android.os.Power.BRIGHTNESS_ON);
+                                newBrightness = Math.max(newBrightness, mMinBrightness);
+                                try {
+                                    IPowerManager power = IPowerManager.Stub.asInterface(ServiceManager.getService("power"));
+                                    if (power != null) {
+                                        power.setBacklightBrightness(newBrightness);
+                                        Settings.System.putInt(mContext.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS,
+                                                newBrightness);
+                                    }
+                                } catch (RemoteException e) {
+                                    Slog.w(TAG, "Setting Brightness failed: " + e);
+                                }
+                            } else {
+                                mLinger++;
+                            }
+                        } else {
+                            mLinger = 0;
+                        }
+                    }
+                } else {
                     mAnimatingReveal = false;
                     updateExpandedViewPos(y + mViewDelta);
                 }
@@ -2238,10 +2315,20 @@ public class PhoneStatusBar extends StatusBar {
                     }
                 }
                 animateCollapse(excludeRecents);
+                if(Intent.ACTION_SCREEN_OFF.equals(action)) {
+                    // Explicitly hide the expanded dialog. Otherwise it
+                    // causes continuous buffer updates to SurfaceTexture
+                    // even when SCREEN is turned off (while In-Call).
+                    // This keeps the power consumption to a minimum
+                    // in such a scenario.
+                    mExpandedDialog.hide();
+                }
             }
             else if (Intent.ACTION_CONFIGURATION_CHANGED.equals(action)) {
                 repositionNavigationBar();
                 updateResources();
+            } else if (Intent.ACTION_SCREEN_ON.equals(action)) {
+                mExpandedDialog.show();
             }
         }
     };

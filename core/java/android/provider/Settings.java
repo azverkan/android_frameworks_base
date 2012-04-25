@@ -1394,7 +1394,7 @@ public final class Settings {
         public static final int SCREEN_BRIGHTNESS_MODE_MANUAL = 0;
 
         /**
-         * SCREEN_BRIGHTNESS_MODE value for manual mode.
+         * SCREEN_BRIGHTNESS_MODE value for automatic mode.
          */
         public static final int SCREEN_BRIGHTNESS_MODE_AUTOMATIC = 1;
 
@@ -1541,6 +1541,22 @@ public final class Settings {
         public static final String ALWAYS_FINISH_ACTIVITIES =
                 "always_finish_activities";
 
+
+        /**
+         * Volume Overlay Mode, This is behaviour of the volume overlay panel
+         * Defaults to 0 - which is simple
+         * @hide
+         */
+        public static final String MODE_VOLUME_OVERLAY = "mode_volume_overlay";
+
+        /** @hide */
+        public static final int VOLUME_OVERLAY_SINGLE = 0;
+        /** @hide */
+        public static final int VOLUME_OVERLAY_EXPANDABLE = 1;
+        /** @hide */
+        public static final int VOLUME_OVERLAY_EXPANDED = 2;
+        /** @hide */
+        public static final int VOLUME_OVERLAY_NONE = 3;
 
         /**
          * Ringer mode. This is used internally, changing this value will not
@@ -1805,6 +1821,19 @@ public final class Settings {
         public static final String ACCELEROMETER_ROTATION = "accelerometer_rotation";
 
         /**
+         * Control the type of rotation which can be performed using the accelerometer
+         * if ACCELEROMETER_ROTATION is enabled.
+         * Value is a bitwise combination of
+         * 1 = 0 degrees (portrait)
+         * 2 = 90 degrees (left)
+         * 4 = 180 degrees (inverted portrait)
+         * 8 = 270 degrees (right)
+         * Setting to 0 is effectively orientation lock
+         * @hide
+         */
+        public static final String ACCELEROMETER_ROTATION_ANGLES = "accelerometer_rotation_angles";
+
+        /**
          * Default screen rotation when no other policy applies.
          * When {@link #ACCELEROMETER_ROTATION} is zero and no on-screen Activity expresses a
          * preference, this rotation value will be used. Must be one of the
@@ -1891,6 +1920,43 @@ public final class Settings {
         public static final String NOTIFICATION_LIGHT_PULSE = "notification_light_pulse";
 
         /**
+         * Whether the battery LED should repeatedly flash when the battery is low
+         * on charge. The value is boolean (1 or 0).
+         * @hide
+         */
+        public static final String BATTERY_LIGHT_PULSE = "battery_light_pulse";
+
+        /**
+         * What color to use for the notification LED by default
+         * @hide
+         */
+        public static final String NOTIFICATION_LIGHT_PULSE_DEFAULT_COLOR = "notification_light_pulse_default_color";
+
+        /**
+         * How long to flash the notification LED by default
+         * @hide
+         */
+        public static final String NOTIFICATION_LIGHT_PULSE_DEFAULT_LED_ON = "notification_light_pulse_default_led_on";
+
+        /**
+         * How long to wait between flashes for the notification LED by default
+         * @hide
+         */
+        public static final String NOTIFICATION_LIGHT_PULSE_DEFAULT_LED_OFF = "notification_light_pulse_default_led_off";
+
+        /**
+         * Whether to use the custom LED values for the notification pulse LED.
+         * @hide
+         */
+        public static final String NOTIFICATION_LIGHT_PULSE_CUSTOM_ENABLE = "notification_light_pulse_custom_enable";
+
+        /**
+         * Which custom LED values to use for the notification pulse LED.
+         * @hide
+         */
+        public static final String NOTIFICATION_LIGHT_PULSE_CUSTOM_VALUES = "notification_light_pulse_custom_values";
+
+        /**
          * Show pointer location on screen?
          * 0 = no
          * 1 = yes
@@ -1921,6 +1987,12 @@ public final class Settings {
          * @hide
          */
         public static final String POWER_SOUNDS_ENABLED = "power_sounds_enabled";
+
+        /**
+         * Whether to route USB Audio when docked.
+         * @hide
+         */
+        public static final String DOCK_USB_AUDIO_ENABLED = "dock_usb_audio_enabled";
 
         /**
          * Whether to play a sound for dock events.
@@ -2089,6 +2161,13 @@ public final class Settings {
         public static final String EXPANDED_NETWORK_MODE = "expanded_network_mode";
 
         /**
+         * Notification Power Widget - Custom LTE Toggle
+         * 1 - lte on, 0 - lte off
+         * @hide
+         */
+        public static final String LTE_MODE = "lte_mode";
+
+        /**
         * Notification Power Widget - Custom Screen Timeout
         * @hide
         */
@@ -2105,6 +2184,159 @@ public final class Settings {
         * @hide
         */
         public static final String EXPANDED_FLASH_MODE = "expanded_flash_mode";
+
+        /**
+        * AutoHide CombinedBar on tablets.
+        * @hide
+        */
+        public static final String COMBINED_BAR_AUTO_HIDE = "combined_bar_auto_hide";
+
+        /**
+         * Display style of AM/PM next to clock in status bar
+         * 0: Normal display (Eclair stock)
+         * 1: Small display (Froyo stock)
+         * 2: No display (Gingerbread/ICS stock)
+         * default: 2
+         * @hide
+         */
+        public static final String STATUS_BAR_AM_PM = "status_bar_am_pm";
+
+        /**
+         * Display style of the status bar battery information
+         * 0: Display the stock battery information
+         * 1: Display cm battery percentage implementation / dont show stock icon
+         * 2: Hide the battery information
+         * default: 0
+         * @hide
+         */
+        public static final String STATUS_BAR_BATTERY = "status_bar_battery";
+
+        /**
+         * Whether to show the clock in status bar
+         * of the stock battery icon
+         * 0: don't show the clock
+         * 1: show the clock
+         * default: 1
+         * @hide
+         */
+        public static final String STATUS_BAR_CLOCK = "status_bar_clock";
+
+        /**
+         * Whether to show the signal text or signal bars.
+         * default: 0
+         * 0: show signal bars
+         * 1: show signal text numbers
+         * 2: show signal text numbers w/small dBm appended
+         * @hide
+         */
+        public static final String STATUS_BAR_SIGNAL_TEXT = "status_bar_signal";
+
+         /**
+         * Whether to control brightness from status bar
+         *
+         * @hide
+         */
+        public static final String STATUS_BAR_BRIGHTNESS_CONTROL = "status_bar_brightness_control";
+
+        /**
+         * Whether to use a separate delay for "slide to unlock" and security
+         * lock
+         * @hide
+         */
+        public static final String SCREEN_LOCK_SLIDE_DELAY_TOGGLE = "screen_lock_slide_delay_toggle";
+
+        /**
+         * How many ms to delay before enabling the "slide to unlock" screen
+         * lock when the screen goes off due to timeout
+         * @hide
+         */
+        public static final String SCREEN_LOCK_SLIDE_TIMEOUT_DELAY = "screen_lock_slide_timeout_delay";
+
+        /**
+         * How many ms to delay before enabling the "slide to unlock" screen
+         * lock when the screen is turned off by the user
+         * @hide
+         */
+        public static final String SCREEN_LOCK_SLIDE_SCREENOFF_DELAY = "screen_lock_slide_screenoff_delay";
+
+        /**
+         * Whether to use the custom quick unlock screen control
+         * @hide
+         */
+        public static final String LOCKSCREEN_QUICK_UNLOCK_CONTROL = "lockscreen_quick_unlock_control";
+
+        /**
+         * Boolean value whether to link ringtone and notification volumes
+         * 
+         * @hide
+         */
+        public static final String VOLUME_LINK_NOTIFICATION = "volume_link_notification";
+
+        /**
+         * Whether to unlock the menu key.  The value is boolean (1 or 0).
+         * @hide
+         */
+        public static final String MENU_UNLOCK_SCREEN = "menu_unlock_screen";
+
+        /**
+         * Whether to wake the screen with the volume keys, the value is boolean.
+         * @hide
+         */
+        public static final String VOLUME_WAKE_SCREEN = "volume_wake_screen";
+
+        /**
+         * Whether or not volume button music controls should be enabled to seek media tracks
+         * @hide
+         */
+        public static final String VOLBTN_MUSIC_CONTROLS = "volbtn_music_controls";
+
+        /**
+         * Whether national data roaming should be used.
+         * @hide
+         */
+        public static final String MVNO_ROAMING = "mvno_roaming";
+
+        /**
+         * Whether to enable quiet hours.
+         * @hide
+         */
+        public static final String QUIET_HOURS_ENABLED = "quiet_hours_enabled";
+
+        /**
+         * Sets when quiet hours starts. This is stored in minutes from the start of the day.
+         * @hide
+         */
+        public static final String QUIET_HOURS_START = "quiet_hours_start";
+
+        /**
+         * Sets when quiet hours end. This is stored in minutes from the start of the day.
+         * @hide
+         */
+        public static final String QUIET_HOURS_END = "quiet_hours_end";
+
+        /**
+         * Whether to remove the sound from outgoing notifications during quiet hours.
+         * @hide
+         */
+        public static final String QUIET_HOURS_MUTE = "quiet_hours_mute";
+
+        /**
+         * Whether to disable haptic feedback during quiet hours.
+         * @hide
+         */
+        public static final String QUIET_HOURS_HAPTIC = "quiet_hours_haptic";
+
+        /**
+         * Whether to remove the vibration from outgoing notifications during quiet hours.
+         * @hide
+         */
+        public static final String QUIET_HOURS_STILL = "quiet_hours_still";
+
+        /**
+         * Whether to attempt to dim the LED color during quiet hours.
+         * @hide
+         */
+        public static final String QUIET_HOURS_DIM = "quiet_hours_dim";
 
         /**
          * Settings to backup. This is here so that it's in the same place as the settings
@@ -2175,6 +2407,12 @@ public final class Settings {
             SIP_CALL_OPTIONS,
             SIP_RECEIVE_CALLS,
             POINTER_SPEED,
+            QUIET_HOURS_ENABLED,
+            QUIET_HOURS_START,
+            QUIET_HOURS_END,
+            QUIET_HOURS_MUTE,
+            QUIET_HOURS_STILL,
+            QUIET_HOURS_DIM,
         };
 
         // Settings moved to Settings.Secure
@@ -2822,10 +3060,10 @@ public final class Settings {
 
         /**
          * Whether the package installer should allow installation of apps downloaded from
-         * sources other than the Android Market (vending machine).
+         * sources other than Google Play.
          *
          * 1 = allow installing from other sources
-         * 0 = only allow installing from the Android Market
+         * 0 = only allow installing from Google Play
          */
         public static final String INSTALL_NON_MARKET_APPS = "install_non_market_apps";
 
@@ -2884,6 +3122,11 @@ public final class Settings {
          */
         public static final String ASSISTED_GPS_ENABLED = "assisted_gps_enabled";
 
+        /**
+         * External GPS source/device
+         * @hide
+         */
+        public static final String EXTERNAL_GPS_BT_DEVICE = "0";
         /**
          * The Logging ID (a unique 64-bit value) as a hex string.
          * Used as a pseudonymous identifier for logging.
@@ -3398,6 +3641,12 @@ public final class Settings {
             "wifi_mobile_data_transition_wakelock_timeout_ms";
 
         /**
+         * Whether the Wimax should be on.  Only the WiMAX service should touch this.
+         * @hide
+         */
+        public static final String WIMAX_ON = "wimax_on";
+
+        /**
          * Whether background data usage is allowed by the user. See
          * ConnectivityManager for more info.
          */
@@ -3871,11 +4120,20 @@ public final class Settings {
                 "pdp_watchdog_max_pdp_reset_fail_count";
 
         /**
-         * The number of milliseconds to delay when checking for data stalls
+         * The number of milliseconds to delay when checking for data stalls during
+         * non-aggressive detection. (screen is turned off.)
          * @hide
          */
-        public static final String DATA_STALL_ALARM_DELAY_IN_MS =
-                "data_stall_alarm_delay_in_ms";
+        public static final String DATA_STALL_ALARM_NON_AGGRESSIVE_DELAY_IN_MS =
+                "data_stall_alarm_non_aggressive_delay_in_ms";
+
+        /**
+         * The number of milliseconds to delay when checking for data stalls during
+         * aggressive detection. (screen on or suspected data stall)
+         * @hide
+         */
+        public static final String DATA_STALL_ALARM_AGGRESSIVE_DELAY_IN_MS =
+                "data_stall_alarm_aggressive_delay_in_ms";
 
         /**
          * The interval in milliseconds at which to check gprs registration
